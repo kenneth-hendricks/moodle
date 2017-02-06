@@ -62,8 +62,7 @@ function cron_run() {
     mtrace("Server Time: ".date('r', $timenow)."\n\n");
 
     // Run all scheduled tasks.
-    while (!\core\task\manager::static_caches_cleared_since($timenow) &&
-           $task = \core\task\manager::get_next_scheduled_task($timenow)) {
+    while ($task = \core\task\manager::get_next_scheduled_task($timenow)) {
         $fullname = $task->get_name() . ' (' . get_class($task) . ')';
         mtrace('Execute scheduled task: ' . $fullname);
         cron_trace_time_and_memory();
@@ -72,7 +71,11 @@ function cron_run() {
         $pretime      = microtime(1);
         try {
             get_mailer('buffer');
-            $task->execute();
+            if (\core\task\manager::should_task_execute($timenow)) {
+                $task->execute();
+            } else {
+                mtrace('Not running task, criteria not met');
+            }
             if ($DB->is_transaction_started()) {
                 throw new coding_exception("Task left transaction open");
             }
@@ -107,8 +110,7 @@ function cron_run() {
     }
 
     // Run all adhoc tasks.
-    while (!\core\task\manager::static_caches_cleared_since($timenow) &&
-           $task = \core\task\manager::get_next_adhoc_task($timenow)) {
+    while ($task = \core\task\manager::get_next_adhoc_task($timenow)) {
         mtrace("Execute adhoc task: " . get_class($task));
         cron_trace_time_and_memory();
         $predbqueries = null;
@@ -116,7 +118,11 @@ function cron_run() {
         $pretime      = microtime(1);
         try {
             get_mailer('buffer');
-            $task->execute();
+            if (\core\task\manager::should_task_execute($timenow)) {
+                $task->execute();
+            } else {
+                mtrace('Not running task, criteria not met');
+            }
             if ($DB->is_transaction_started()) {
                 throw new coding_exception("Task left transaction open");
             }
@@ -156,6 +162,99 @@ function cron_run() {
     mtrace('Cron completed at ' . date('H:i:s') . '. Memory used ' . display_size(memory_get_usage()) . '.');
     $difftime = microtime_diff($starttime, microtime());
     mtrace("Execution took ".$difftime." seconds");
+}
+
+function cron_disable() {
+    set_config('cron_enabled', 0);
+}
+
+function cron_enable() {
+    set_config('cron_enabled', 1);
+}
+
+function cron_disable_and_wait($verbose = false) {
+    global $DB;
+    cron_disable();
+    echo get_string('cron_disabled', 'admin') . "\n";
+
+    $tasks = $DB->get_fieldset_select('task_scheduled', 'classname', '');
+    $locks = get_task_locks($tasks);
+    $missingtasks = get_cron_tasks_missing_locks($tasks, $locks);
+
+    while (!empty($missingtasks)) {
+        if ($verbose) {
+            log_lock_missing_cron_tasks($tasks, $missingtasks, $locks);
+        }
+        echo get_string('cronrunning', 'admin') . "\n";
+        sleep(10);
+        $newlocks = get_task_locks($missingtasks);
+        $locks = array_merge($locks, $newlocks);
+        $missingtasks = get_cron_tasks_missing_locks($tasks, $locks);
+    }
+
+    foreach ($locks as $lock) {
+        $lock->release();
+    }
+
+    echo get_string('cronnotrunning', 'admin') . "\n";
+}
+
+function get_cron_tasks_missing_locks($tasks, $locks) {
+    $missingtasks = array();
+    foreach ($tasks as $task) {
+        if (!array_key_exists($task, $locks)) {
+            $missingtasks[] = $task;
+        }
+    }
+    return $missingtasks;
+}
+
+function log_lock_missing_cron_tasks($tasks, $missingtasks, $locks) {
+    $totaltasks = count($tasks);
+    $totallocks = count($locks);
+    $missingtasknames = implode(', ', $missingtasks);
+
+    $logstring = "Locked $totallocks/$totaltasks tasks";
+
+    if (!empty($missingtasks)) {
+        $logstring .= ", missing $missingtasknames";
+    }
+    mtrace($logstring);
+}
+
+function get_task_locks($tasks) {
+    $locks = array();
+    $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
+    foreach ($tasks as $task) {
+        if ($lock = $cronlockfactory->get_lock($task, 0)) {
+            $locks[$task] = $lock;
+        }
+    }
+    return $locks;
+}
+
+function cron_is_running($verbose = false) {
+    global $DB;
+
+    $tasks = $DB->get_fieldset_select('task_scheduled', 'classname', '');
+    $locks = get_task_locks($tasks);
+    $missingtasks = get_cron_tasks_missing_locks($tasks, $locks);
+
+    if ($verbose) {
+        log_lock_missing_cron_tasks($tasks, $missingtasks, $locks);
+    }
+
+    foreach ($locks as $lock) {
+        $lock->release();
+    }
+
+    if (empty($missingtasks)) {
+        echo get_string('cronnotrunning', 'admin') . "\n";
+        return false;
+    }
+
+    echo get_string('cronrunning', 'admin') . "\n";
+    return true;
 }
 
 /**

@@ -35,8 +35,9 @@ require_once($CFG->libdir.'/clilib.php');      // cli only functions
 require_once($CFG->libdir.'/cronlib.php');
 
 // now get cli options
-list($options, $unrecognized) = cli_get_params(array('help'=>false),
-                                               array('h'=>'help'));
+list($options, $unrecognized) = cli_get_params(array('help' => false, 'enable' => false, 'disable' => false,
+                                                     'disable-wait' => false, 'is-running' => false, 'verbose' => false),
+                                               array('h' => 'help'));
 
 if ($unrecognized) {
     $unrecognized = implode("\n  ", $unrecognized);
@@ -49,12 +50,31 @@ if ($options['help']) {
 
 Options:
 -h, --help            Print out this help
+--enable              Enable cron
+--disable             Disable cron
+--disable-wait        Disable cron and wait until finished
+--is-running          Print cron status
+--verbose             Print verbose task information for is-running and disable-wait
 
 Example:
 \$sudo -u www-data /usr/bin/php admin/cli/cron.php
 ";
 
     echo $help;
+    die;
+} else if ($options['enable']) {
+    cron_enable();
+    echo get_string('cron_enabled', 'admin') . "\n";
+    die;
+} else if ($options['disable']) {
+    cron_disable();
+    echo get_string('cron_disabled', 'admin') . "\n";
+    die;
+} else if ($options['disable-wait']) {
+    cron_disable_and_wait($options['verbose']);
+    die;
+} else if ($options['is-running']) {
+    cron_is_running($options['verbose']);
     die;
 }
 

@@ -664,4 +664,10 @@ class manager {
         $record = $DB->get_record('config', array('name'=>'scheduledtaskreset'));
         return $record && (intval($record->value) > $starttime);
     }
+
+    public static function should_task_execute($timenow) {
+        $cronenabled = get_config('core', 'cron_enabled');
+        $cachescleared = \core\task\manager::static_caches_cleared_since($timenow);
+        return $cronenabled && !$cachescleared;
+    }
 }

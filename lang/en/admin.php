@@ -1241,3 +1241,8 @@ $string['cacheapplication'] = 'Application cache';
 $string['cacheapplicationhelp'] = 'Cached items are shared among all users and expire by a determined time to live (ttl).';
 // Deprecated since Moodle 3.2.
 $string['mobile'] = 'Mobile';
+
+$string['crondisabled'] = 'Cron has been disabled for the site.';
+$string['cronenabled'] = 'Cron had been enabled for the site.';
+$string['cronrunning'] = 'Cron is currently running.';
+$string['cronnotrunning'] = 'Cron is not currently running';
