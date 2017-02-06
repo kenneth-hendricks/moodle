@@ -24,6 +24,8 @@
  */
 namespace core\task;
 
+require_once($CFG->libdir.'/cronlib.php');
+
 define('CORE_TASK_TASKS_FILENAME', 'db/tasks.php');
 /**
  * Collection of task related methods.
@@ -409,6 +411,12 @@ class manager {
      */
     public static function get_next_adhoc_task($timestart) {
         global $DB;
+
+        if (cron_is_disabled()) {
+            mtrace('Cron has been disabled - exiting early');
+            return null;
+        }
+
         $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
 
         if (!$cronlock = $cronlockfactory->get_lock('core_cron', 10)) {
@@ -420,6 +428,12 @@ class manager {
         $records = $DB->get_records_select('task_adhoc', $where, $params);
 
         foreach ($records as $record) {
+
+            if (cron_is_disabled()) {
+                $cronlock->release();
+                mtrace('Cron has been disabled - exiting early');
+                return null;
+            }
 
             if ($lock = $cronlockfactory->get_lock('adhoc_' . $record->id, 0)) {
                 $classname = '\\' . $record->classname;
@@ -463,6 +477,12 @@ class manager {
      */
     public static function get_next_scheduled_task($timestart) {
         global $DB;
+
+        if (cron_is_disabled()) {
+            mtrace('Cron has been disabled - exiting early');
+            return null;
+        }
+
         $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
 
         if (!$cronlock = $cronlockfactory->get_lock('core_cron', 10)) {
@@ -479,6 +499,12 @@ class manager {
         $pluginmanager = \core_plugin_manager::instance();
 
         foreach ($records as $record) {
+
+            if (cron_is_disabled()) {
+                mtrace('Cron has been disabled - exiting early');
+                $cronlock->release();
+                return null;
+            }
 
             if ($lock = $cronlockfactory->get_lock(($record->classname), 0)) {
                 $classname = '\\' . $record->classname;
@@ -672,4 +698,94 @@ class manager {
         $record = $DB->get_record('config', array('name'=>'scheduledtaskreset'));
         return $record && (intval($record->value) > $starttime);
     }
+
+    /**
+     * Gets all the identifiers for locks related to
+     * both scheduled and adhoc tasks.
+     *
+     * @return array lock keys
+     */
+    public static function get_all_task_lock_keys() {
+        global $DB;
+        $scheduledtaskkeys = $DB->get_fieldset_sql('SELECT classname FROM {task_scheduled} ORDER BY classname');
+        $adhoctaskkeys = $DB->get_fieldset_sql('SELECT id FROM {task_adhoc} ORDER BY id');
+
+        foreach ($adhoctaskkeys as $key => $value) {
+            $adhoctaskkeys[$key] = 'adhoc_' . $value;
+        }
+        $taskkeys = array_merge($scheduledtaskkeys, $adhoctaskkeys);
+        return $taskkeys;
+    }
+
+    /**
+     * Retreives all task related locks.
+     *
+     * If waitforlocks is false - will exit if it cannot acquire a lock.
+     *
+     * @param  process_trace $trace process trace
+     * @param  boolean $waitforlocks wait until all locks are held
+     * @param  integer $waitduration how long to wait between attempts in seconds
+     *
+     * @return array all task locks - empty if they could not be acquired.
+     */
+    public static function get_all_task_locks($trace, $waitforlocks = false, $waitduration = 1) {
+        global $DB;
+        $lockkeys = self::get_all_task_lock_keys();
+        $lockcount = count($lockkeys);
+
+        $heldlocks = array();
+        $heldlocks = self::get_free_task_locks($trace, $waitforlocks, $lockkeys, $heldlocks);
+
+        // If we can't get all locks and won't wait we release them now.
+        if (!$waitforlocks && ($lockcount !== count($heldlocks))) {
+            foreach ($heldlocks as $lock) {
+                $lock->release();
+            }
+            return array();
+        }
+
+        // We sleep for waitduration and then attempt to acquire all the task locks we can. Because we are trying to
+        // acquire many locks at once - we use a timeout of 0 when calling get_lock.
+        while ($lockcount !== count($heldlocks)) {
+            sleep($waitduration);
+            $heldlocks = self::get_free_task_locks($trace, $waitforlocks, $lockkeys, $heldlocks);
+        }
+
+        return $heldlocks;
+    }
+
+    /**
+     * Attempts to acquire all free task locks.
+     *
+     * @param  process_trace $trace process trace
+     * @param  boolean $attemptall try all locks or return on failure.
+     * @param  array $lockkeys all keys for locks to acquire.
+     * @param  array   $heldlocks locks currently held.
+     *
+     * @return array task locks.
+     */
+    protected static function get_free_task_locks($trace, $attemptall = true, $lockkeys, $heldlocks = array()) {
+        global $DB;
+        $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
+        foreach ($lockkeys as $lockkey) {
+            if (array_key_exists($lockkey, $heldlocks)) {
+                continue;
+            }
+
+            $tasklock = $cronlockfactory->get_lock($lockkey, 0);
+
+            if ($tasklock) {
+                $heldlocks[$lockkey] = $tasklock;
+                $trace->output("Acquired $lockkey lock");
+            } else {
+                $trace->output("Could not acquire $lockkey lock");
+                if (!$attemptall) {
+                    return $heldlocks;
+                }
+            }
+        }
+
+        return $heldlocks;
+    }
+
 }

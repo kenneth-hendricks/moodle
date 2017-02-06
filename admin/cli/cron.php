@@ -35,12 +35,31 @@ require_once($CFG->libdir.'/clilib.php');      // cli only functions
 require_once($CFG->libdir.'/cronlib.php');
 
 // now get cli options
-list($options, $unrecognized) = cli_get_params(array('help'=>false),
-                                               array('h'=>'help'));
+list($options, $unrecognized) = cli_get_params(array(
+    'help' => false,
+    'enable' => false,
+    'disable' => false,
+    'disable-wait' => false,
+    'is-running' => false,
+    'verbose' => false,
+), array(
+    'h' => 'help',
+    'e' => 'enable',
+    'd' => 'disable',
+    'w' => 'disable-wait',
+    'i' => 'is-running',
+    'v' => 'verbose',
+));
 
 if ($unrecognized) {
     $unrecognized = implode("\n  ", $unrecognized);
     cli_error(get_string('cliunknowoption', 'admin', $unrecognized));
+}
+
+if (empty($options['verbose'])) {
+    $trace = new null_progress_trace();
+} else {
+    $trace = new text_progress_trace();
 }
 
 if ($options['help']) {
@@ -48,7 +67,13 @@ if ($options['help']) {
 "Execute periodic cron actions.
 
 Options:
--h, --help            Print out this help
+                      If no options then run cron (default)
+ -h, --help           Print out this help
+ -e, --enable         Enable cron
+ -d, --disable        Disable cron
+ -w, --disable-wait   Disable cron and wait until finished
+ -i, --is-running     Print cron status
+ -v, --verbose        Print verbose task information for disable-wait and is-running
 
 Example:
 \$sudo -u www-data /usr/bin/php admin/cli/cron.php
@@ -56,6 +81,37 @@ Example:
 
     echo $help;
     die;
+
+} else if ($options['enable']) {
+    cron_enable();
+    echo "Cron had been enabled for the site.\n";
+    die;
+
+} else if ($options['disable']) {
+    cron_disable();
+    echo "Cron has been disabled for the site.\n";
+    die;
+
+} else if ($options['disable-wait']) {
+    cron_disable_and_wait($trace);
+    echo "Cron is not currently running.\n";
+    die;
+
+} else if ($options['is-running']) {
+
+    if (cron_is_disabled()) {
+        echo "Cron is disabled.\n";
+    } else {
+        echo "Cron is enabled.\n";
+    }
+
+    if (cron_is_running($trace)) {
+        echo "Cron is currently running.\n";
+    } else {
+        echo "Cron is not currently running.\n";
+    }
+    die;
+
 }
 
 cron_run();

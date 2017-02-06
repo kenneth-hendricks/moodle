@@ -151,4 +151,33 @@ class tool_task_renderer extends plugin_renderer_base {
         return $this->render_from_template('tool_task/link_back',
                 array('url' => new moodle_url('/admin/tool/task/scheduledtasks.php')));
     }
+
+    /**
+     * This function will render a toggle for cron on the scheduledtasks page.
+     *
+     * @param bool $crondisabled - whether cron is disabled.
+     * @return string HTML to output.
+     */
+    public function cron_toggle($crondisabled) {
+        global $OUTPUT;
+        $output = '';
+
+        if ($crondisabled) {
+            $label = get_string('cronisdisabled', 'admin');
+            $pixicon = 'i/invalid';
+            $action = new confirm_action(get_string('cronconfirmenable', 'admin'));
+            $togglestate = 'enable';
+        } else {
+            $label = get_string('cronisenabled', 'admin');
+            $pixicon = 'i/valid';
+            $action = new confirm_action(get_string('cronconfirmdisable', 'admin'));
+            $togglestate = 'disable';
+        }
+
+        $toggleurl = new moodle_url('/admin/tool/task/scheduledtasks.php', array('cron' => $togglestate));
+
+        $output .= $OUTPUT->action_link($toggleurl, $label, $action, null, new pix_icon($pixicon, ''));
+
+        return $output;
+    }
 }

@@ -28,7 +28,20 @@ defined('MOODLE_INTERNAL') || die();
 global $CFG;
 require_once($CFG->libdir.'/cronlib.php');
 
-class cronlib_testcase extends basic_testcase {
+class cronlib_testcase extends advanced_testcase {
+
+    public function setUp() {
+        $this->resetAfterTest();
+        global $CFG;
+
+        // We want a lock factory that does not support recursion so we can test blocking.
+        $CFG->lock_factory = '\\core\\lock\\file_lock_factory';
+        $this->cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
+
+        // Set up a trace buffer to test our verbose strings.
+        $trace = new text_progress_trace();
+        $this->tracebuffer = new progress_trace_buffer($trace, false);
+    }
 
     /**
      * Data provider for cron_delete_from_temp.
@@ -177,5 +190,71 @@ class cronlib_testcase extends basic_testcase {
         sort($actual);
 
         $this->assertEquals($expected, $actual);
+    }
+
+    public function test_cron_is_disabled_when_config_not_set() {
+        global $DB;
+
+        // Make sure config record is deleted.
+        $DB->delete_records('config', array('name' => 'cron_disabled'));
+
+        $isdisabled = cron_is_disabled();
+
+        $this->assertFalse($isdisabled);
+    }
+
+    public function test_can_get_cron_lock() {
+        $cronlock = get_cron_lock($this->tracebuffer);
+
+        $expectedoutput = "Acquired cron lock\n";
+        $actualoutput = $this->tracebuffer->get_buffer();
+        $this->assertEquals($expectedoutput, $actualoutput);
+
+        $this->assertEquals(get_class($cronlock), 'core\lock\lock');
+
+        $cronlock->release();
+    }
+
+    public function test_cant_get_cron_lock_if_held() {
+        $cronlock = $this->cronlockfactory->get_lock('core_cron', 0);
+
+        $anothercronlock = get_cron_lock($this->tracebuffer);
+
+        $expectedoutput = "Could not acquire cron lock\n";
+        $actualoutput = $this->tracebuffer->get_buffer();
+        $this->assertEquals($expectedoutput, $actualoutput);
+
+        $this->assertFalse($anothercronlock);
+
+        $cronlock->release();
+    }
+
+    public function test_cron_is_running_returns_true_if_task_lock_held() {
+        global $DB;
+        // Grab any task lock.
+        $taskkey = $DB->get_field('task_scheduled', 'classname', array(), IGNORE_MULTIPLE);
+        $tasklock = $this->cronlockfactory->get_lock($taskkey, 0);
+
+        $cronisrunning = cron_is_running($this->tracebuffer);
+
+        $expectedoutput = "Could not acquire $taskkey";
+        $actualoutput = $this->tracebuffer->get_buffer();
+        $this->assertContains($expectedoutput, $actualoutput);
+
+        $this->assertTrue($cronisrunning);
+
+        $tasklock->release();
+    }
+
+    public function test_cron_is_running_returns_true_if_cron_lock_held() {
+        $cronlock = $this->cronlockfactory->get_lock('core_cron', 0);
+
+        $cronisrunning = cron_is_running($this->tracebuffer);
+
+        $expectedoutput = "Could not acquire cron lock\n";
+        $actualoutput = $this->tracebuffer->get_buffer();
+        $this->assertContains($expectedoutput, $actualoutput);
+
+        $cronlock->release();
     }
 }

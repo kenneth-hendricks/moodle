@@ -195,6 +195,11 @@ function cron_run_single_task(\core\task\scheduled_task $task) {
         return false;
     }
 
+    if (cron_is_disabled()) {
+        mtrace('Cron has been disabled - exiting early');
+        return null;
+    }
+
     // Check task and component is not disabled.
     $taskname = get_class($task);
     if ($task->get_disabled()) {
@@ -252,6 +257,112 @@ function cron_run_single_task(\core\task\scheduled_task $task) {
     cron_setup_user($realuser, null, true);
 
     return true;
+
+}
+
+/**
+ * Disables cron.
+ */
+function cron_disable() {
+    set_config('cron_disabled', 1);
+}
+
+/**
+ * Enables cron.
+ */
+function cron_enable() {
+    set_config('cron_disabled', 0);
+}
+
+/**
+ * Is cron disabled?
+ *
+ * @return boolean is cron disabled.
+ */
+function cron_is_disabled() {
+    global $DB;
+    // We don't use get_config here because of caching.
+    $disabled = $DB->get_field('config', 'value', array('name' => 'cron_disabled'));
+    return $disabled;
+}
+
+/**
+ * Determines if cron is actively running anywhere.
+ *
+ * Tries to acquire the cron lock and all task locks. Will fail if any lock
+ * cannot be acquired. It does not wait for any locks to free so it exits fast.
+ *
+ * This will also return false even if cron isn't running anywhere but a task
+ * is being manually run using admin/tool/task/cli/schedule_task.php.
+ *
+ * @param  progress_trace $trace process trace
+ * @return boolean whether cron is running.
+ */
+function cron_is_running(progress_trace $trace) {
+    $cronlock = get_cron_lock($trace);
+
+    if (!$cronlock) {
+        return true;
+    }
+
+    $tasklocks = \core\task\manager::get_all_task_locks($trace);
+
+    foreach ($tasklocks as $lock) {
+        $lock->release();
+    }
+
+    $cronlock->release();
+
+    if (empty($tasklocks)) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Disables cron and waits until all related locks are acquired.
+ *
+ * @param  progress_trace $trace process trace
+ */
+function cron_disable_and_wait($trace) {
+    cron_disable();
+    $cronlock = get_cron_lock($trace, true);
+
+    $tasklocks = \core\task\manager::get_all_task_locks($trace, true, 3);
+
+    foreach ($tasklocks as $lock) {
+        $lock->release();
+    }
+
+    $cronlock->release();
+}
+
+/**
+ * Attempts to obtain the cron lock.
+ *
+ * @param  progress_trace $trace process trace
+ * @param  bool $waitforlock whether to wait for cron lock
+ *
+ * @return \core\lock\lock or false if not obtained.
+ */
+function get_cron_lock(progress_trace $trace, $waitforlock = false) {
+    $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
+
+    $cronlock = $cronlockfactory->get_lock('core_cron', 0);
+
+    while ($waitforlock && !$cronlock) {
+        $trace->output("Waiting for cron lock");
+        $cronlockfactory->get_lock('core_cron', 10);
+    }
+
+    if ($cronlock) {
+        $trace->output('Acquired cron lock');
+    } else {
+        $trace->output('Could not acquire cron lock');
+    }
+
+    return $cronlock;
 }
 
 /**
