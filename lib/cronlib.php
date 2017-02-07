@@ -62,7 +62,8 @@ function cron_run() {
     mtrace("Server Time: ".date('r', $timenow)."\n\n");
 
     // Run all scheduled tasks.
-    while ($task = \core\task\manager::get_next_scheduled_task($timenow)) {
+    while (!\core\task\manager::static_caches_cleared_since($timenow) &&
+           $task = \core\task\manager::get_next_scheduled_task($timenow)) {
         $fullname = $task->get_name() . ' (' . get_class($task) . ')';
         mtrace('Execute scheduled task: ' . $fullname);
         cron_trace_time_and_memory();
@@ -71,11 +72,7 @@ function cron_run() {
         $pretime      = microtime(1);
         try {
             get_mailer('buffer');
-            if (\core\task\manager::should_task_execute($timenow)) {
-                $task->execute();
-            } else {
-                mtrace('Not running task, criteria not met');
-            }
+            $task->execute();
             if ($DB->is_transaction_started()) {
                 throw new coding_exception("Task left transaction open");
             }
@@ -110,7 +107,8 @@ function cron_run() {
     }
 
     // Run all adhoc tasks.
-    while ($task = \core\task\manager::get_next_adhoc_task($timenow)) {
+    while (!\core\task\manager::static_caches_cleared_since($timenow) &&
+           $task = \core\task\manager::get_next_adhoc_task($timenow)) {
         mtrace("Execute adhoc task: " . get_class($task));
         cron_trace_time_and_memory();
         $predbqueries = null;
@@ -118,11 +116,7 @@ function cron_run() {
         $pretime      = microtime(1);
         try {
             get_mailer('buffer');
-            if (\core\task\manager::should_task_execute($timenow)) {
-                $task->execute();
-            } else {
-                mtrace('Not running task, criteria not met');
-            }
+            $task->execute();
             if ($DB->is_transaction_started()) {
                 throw new coding_exception("Task left transaction open");
             }
@@ -164,97 +158,100 @@ function cron_run() {
     mtrace("Execution took ".$difftime." seconds");
 }
 
+/**
+ * Disables cron.
+ */
 function cron_disable() {
     set_config('cron_enabled', 0);
 }
 
+/**
+ * Enables cron.
+ */
 function cron_enable() {
     set_config('cron_enabled', 1);
 }
 
+/**
+ * Is cron enabled?
+ *
+ * @return boolean is cron enabled.
+ */
+function cron_is_enabled() {
+    return get_config('core', 'cron_enabled');
+}
+
+/**
+ * Whether cron is running. Tries to acquire the cron lock
+ * and all task cron locks. Will fail when a lock cannot be acquired.
+ * Does not wait for a lock to free.
+ *
+ * @return boolean whether cron is running.
+ */
+function cron_is_running() {
+    $cronlock = get_cron_lock();
+
+    if (!$cronlock) {
+        return true;
+    }
+
+    $tasklocks = \core\task\manager::get_all_task_locks();
+
+    foreach ($tasklocks as $lock) {
+        $lock->release();
+    }
+
+    $cronlock->release();
+
+    if (!$tasklocks) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Disables cron and wait until all
+ * cron related locks are acquired.
+ *
+ * @param  boolean $verbose output status information while waiting for locks.
+ */
 function cron_disable_and_wait($verbose = false) {
     global $DB;
     cron_disable();
-    echo get_string('cron_disabled', 'admin') . "\n";
+    $cronlock = get_cron_lock(true, 5, $verbose);
 
-    $tasks = $DB->get_fieldset_select('task_scheduled', 'classname', '');
-    $locks = get_task_locks($tasks);
-    $missingtasks = get_cron_tasks_missing_locks($tasks, $locks);
+    $tasklocks = \core\task\manager::get_all_task_locks(true, 5, $verbose);
 
-    while (!empty($missingtasks)) {
-        if ($verbose) {
-            log_lock_missing_cron_tasks($tasks, $missingtasks, $locks);
-        }
-        echo get_string('cronrunning', 'admin') . "\n";
-        sleep(10);
-        $newlocks = get_task_locks($missingtasks);
-        $locks = array_merge($locks, $newlocks);
-        $missingtasks = get_cron_tasks_missing_locks($tasks, $locks);
-    }
-
-    foreach ($locks as $lock) {
+    foreach ($tasklocks as $lock) {
         $lock->release();
     }
 
-    echo get_string('cronnotrunning', 'admin') . "\n";
+    $cronlock->release();
 }
 
-function get_cron_tasks_missing_locks($tasks, $locks) {
-    $missingtasks = array();
-    foreach ($tasks as $task) {
-        if (!array_key_exists($task, $locks)) {
-            $missingtasks[] = $task;
-        }
-    }
-    return $missingtasks;
-}
-
-function log_lock_missing_cron_tasks($tasks, $missingtasks, $locks) {
-    $totaltasks = count($tasks);
-    $totallocks = count($locks);
-    $missingtasknames = implode(', ', $missingtasks);
-
-    $logstring = "Locked $totallocks/$totaltasks tasks";
-
-    if (!empty($missingtasks)) {
-        $logstring .= ", missing $missingtasknames";
-    }
-    mtrace($logstring);
-}
-
-function get_task_locks($tasks) {
-    $locks = array();
+/**
+ * Attempts to obtain the cron lock.
+ *
+ * @param  bool $retry whether to retry if not successful.
+ * @param  int $wait how long to wait in between attempts in seconds.
+ * @param  boolean $verbose output status while waiting for the lock.
+ *
+ * @return \core\lock\lock or false if not obtained.
+ */
+function get_cron_lock($retry = false, $wait = 1, $verbose = false) {
     $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
-    foreach ($tasks as $task) {
-        if ($lock = $cronlockfactory->get_lock($task, 0)) {
-            $locks[$task] = $lock;
+    $cronlock = $cronlockfactory->get_lock('core_cron', 0);
+
+    while ($retry && !$cronlock) {
+        if ($verbose) {
+            mtrace("Waiting for cron lock");
         }
-    }
-    return $locks;
-}
-
-function cron_is_running($verbose = false) {
-    global $DB;
-
-    $tasks = $DB->get_fieldset_select('task_scheduled', 'classname', '');
-    $locks = get_task_locks($tasks);
-    $missingtasks = get_cron_tasks_missing_locks($tasks, $locks);
-
-    if ($verbose) {
-        log_lock_missing_cron_tasks($tasks, $missingtasks, $locks);
+        sleep($wait);
+        $cronlockfactory->get_lock('core_cron', 0);
     }
 
-    foreach ($locks as $lock) {
-        $lock->release();
-    }
-
-    if (empty($missingtasks)) {
-        echo get_string('cronnotrunning', 'admin') . "\n";
-        return false;
-    }
-
-    echo get_string('cronrunning', 'admin') . "\n";
-    return true;
+    return $cronlock;
 }
 
 /**
