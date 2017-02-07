@@ -410,7 +410,7 @@ class manager {
     public static function get_next_adhoc_task($timestart) {
         global $DB;
 
-        if (!cron_is_enabled()) {
+        if (cron_is_disabled()) {
             return null;
         }
 
@@ -425,6 +425,11 @@ class manager {
         $records = $DB->get_records_select('task_adhoc', $where, $params);
 
         foreach ($records as $record) {
+
+            if (cron_is_disabled()) {
+                $cronlock->release();
+                return null;
+            }
 
             if ($lock = $cronlockfactory->get_lock('adhoc_' . $record->id, 10)) {
                 $classname = '\\' . $record->classname;
@@ -461,7 +466,7 @@ class manager {
     public static function get_next_scheduled_task($timestart) {
         global $DB;
 
-        if (!cron_is_enabled()) {
+        if (cron_is_disabled()) {
             return null;
         }
 
@@ -481,6 +486,11 @@ class manager {
         $pluginmanager = \core_plugin_manager::instance();
 
         foreach ($records as $record) {
+
+            if (cron_is_disabled()) {
+                $cronlock->release();
+                return null;
+            }
 
             if ($lock = $cronlockfactory->get_lock(($record->classname), 10)) {
                 $classname = '\\' . $record->classname;

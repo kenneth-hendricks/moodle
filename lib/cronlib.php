@@ -177,8 +177,9 @@ function cron_enable() {
  *
  * @return boolean is cron enabled.
  */
-function cron_is_enabled() {
-    return get_config('core', 'cron_enabled');
+function cron_is_disabled() {
+    $disabled = !get_config('core', 'cron_enabled');
+    return $disabled;
 }
 
 /**
