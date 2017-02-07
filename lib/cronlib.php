@@ -162,23 +162,25 @@ function cron_run() {
  * Disables cron.
  */
 function cron_disable() {
-    set_config('cron_enabled', 0);
+    set_config('cron_disabled', 1);
 }
 
 /**
  * Enables cron.
  */
 function cron_enable() {
-    set_config('cron_enabled', 1);
+    set_config('cron_disabled', 0);
 }
 
 /**
- * Is cron enabled?
+ * Is cron disabled?
  *
- * @return boolean is cron enabled.
+ * @return boolean is cron disabled.
  */
 function cron_is_disabled() {
-    $disabled = !get_config('core', 'cron_enabled');
+    global $DB;
+    // We don't use get_config here because of caching.
+    $disabled = $DB->get_field('config', 'value', array('name' => 'cron_disabled'));
     return $disabled;
 }
 
