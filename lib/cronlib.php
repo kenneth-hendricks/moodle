@@ -207,6 +207,10 @@ function cron_is_running(progress_trace $trace) {
 
     $cronlock->release();
 
+    if (empty($tasklocks)) {
+        return true;
+    }
+
     return false;
 }
 
