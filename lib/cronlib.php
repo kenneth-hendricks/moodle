@@ -189,26 +189,23 @@ function cron_is_disabled() {
  * and all task cron locks. Will fail when a lock cannot be acquired.
  * Does not wait for a lock to free.
  *
+ * @param  process_trace $trace process trace
  * @return boolean whether cron is running.
  */
-function cron_is_running() {
-    $cronlock = get_cron_lock();
+function cron_is_running(progress_trace $trace) {
+    $cronlock = get_cron_lock($trace);
 
     if (!$cronlock) {
         return true;
     }
 
-    $tasklocks = \core\task\manager::get_all_task_locks();
+    $tasklocks = \core\task\manager::get_all_task_locks($trace);
 
     foreach ($tasklocks as $lock) {
         $lock->release();
     }
 
     $cronlock->release();
-
-    if (!$tasklocks) {
-        return true;
-    }
 
     return false;
 }
@@ -217,14 +214,13 @@ function cron_is_running() {
  * Disables cron and wait until all
  * cron related locks are acquired.
  *
- * @param  boolean $verbose output status information while waiting for locks.
+ * @param  process_trace $trace process trace
  */
-function cron_disable_and_wait($verbose = false) {
-    global $DB;
+function cron_disable_and_wait($trace) {
     cron_disable();
-    $cronlock = get_cron_lock(true, 5, $verbose);
+    $cronlock = get_cron_lock($trace, true);
 
-    $tasklocks = \core\task\manager::get_all_task_locks(true, 5, $verbose);
+    $tasklocks = \core\task\manager::get_all_task_locks($trace, true, 3);
 
     foreach ($tasklocks as $lock) {
         $lock->release();
@@ -236,22 +232,30 @@ function cron_disable_and_wait($verbose = false) {
 /**
  * Attempts to obtain the cron lock.
  *
- * @param  bool $retry whether to retry if not successful.
- * @param  int $wait how long to wait in between attempts in seconds.
- * @param  boolean $verbose output status while waiting for the lock.
+ * @param  process_trace $trace process trace
+ * @param  bool $waitforlock whether to wait for cron lock
  *
  * @return \core\lock\lock or false if not obtained.
  */
-function get_cron_lock($retry = false, $wait = 1, $verbose = false) {
+function get_cron_lock(progress_trace $trace, $waitforlock = false) {
     $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
+
     $cronlock = $cronlockfactory->get_lock('core_cron', 0);
 
-    while ($retry && !$cronlock) {
-        if ($verbose) {
-            mtrace("Waiting for cron lock");
-        }
+    if (!$waitforlock) {
+        return $cronlock;
+    }
+
+    while (!$cronlock) {
+        $trace->output("Waiting for cron lock");
         sleep($wait);
-        $cronlockfactory->get_lock('core_cron', 0);
+        $cronlockfactory->get_lock('core_cron', 10);
+    }
+
+    if ($cronlock) {
+        $trace->output('Acquired cron lock');
+    } else {
+        $trace->output('Could not acquire cron lock');
     }
 
     return $cronlock;

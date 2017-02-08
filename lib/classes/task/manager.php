@@ -686,102 +686,93 @@ class manager {
     }
 
     /**
-     * Attempts to attrieve all the task locks.
+     * Gets all the identifiers for locks related to
+     * both scheduled and adhoc tasks.
      *
-     * @param  bool $retry whether to retry if not successful.
-     * @param  int $wait how long to wait in between attempts in seconds.
-     * @param  boolean $verbose output status while waiting for the lock.
-     *
-     * @return array of task locks, indexed by task classname
+     * @return array lock keys
      */
-    public static function get_all_task_locks($retry = false, $wait = false, $verbose = false) {
+    public static function get_all_task_lock_keys() {
         global $DB;
-        $tasks = $DB->get_fieldset_select('task_scheduled', 'classname', '');
-        $taskcount = count($tasks);
-        $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
+        $scheduledtaskkeys = $DB->get_fieldset_select('task_scheduled', 'classname', '');
+        $adhoctaskkeys = $DB->get_fieldset_select('task_adhoc', 'id', '');
 
-        $locks = self::get_task_locks($tasks, $retry);
+        foreach ($adhoctaskkeys as $key => $value) {
+            $adhoctaskkeys[$key] = 'adhoc_' . $value;
+        }
+        $taskkeys = array_merge($scheduledtaskkeys, $adhoctaskkeys);
+        return $taskkeys;
+    }
 
-        while ($retry && count($locks) !== $taskcount) {
-            $tasksmissinglocks = self::get_tasks_missing_locks($tasks, $locks);
-            if ($verbose) {
-                self::log_missing_locks($taskcount, $tasksmissinglocks);
+    /**
+     * Retreives all task related locks.
+     *
+     * If waitforlocks is false - will exit if it cannot acquire a lock.
+     *
+     * @param  process_trace $trace process trace
+     * @param  boolean $waitforlocks wait until all locks are held
+     * @param  integer $waitduration how long to wait between attempts
+     *
+     * @return array all task locks - empty if they could not be acquired.
+     */
+    public static function get_all_task_locks($trace, $waitforlocks = false, $waitduration = 0) {
+        global $DB;
+        $lockkeys = self::get_all_task_lock_keys();
+        $lockcount = count($lockkeys);
+
+        $heldlocks = array();
+        $heldlocks = self::get_free_task_locks($trace, $waitforlocks, $heldlocks);
+
+        // If we can't get all locks and wont wait we release them now.
+        if (!$waitforlocks && $lockcount !== count($heldlocks)) {
+            foreach ($heldlocks as $lock) {
+                $lock->release();
             }
-            sleep($wait);
-            $newlocks = self::get_task_locks($tasksmissinglocks, $retry);
-            $locks = array_merge($locks, $newlocks);
+            return array();
         }
 
-        // If we can't acquire all locks we release them.
-        if (count($locks) !== $taskcount) {
-            foreach ($locks as $lock) {
-                if ($lock) {
-                    $lock->release();
+        while ($lockcount !== count($heldlocks)) {
+            sleep($waitduration);
+            $heldlocks = self::get_free_task_locks($trace, $waitforlocks, $heldlocks);
+        }
+
+        return $heldlocks;
+    }
+
+    /**
+     * Acquires all free task locks.
+     *
+     * @param  process_trace $trace process trace
+     * @param  boolean $attemptall try all locks or return on failure.
+     * @param  array   $heldlocks locks currently held.
+     *
+     * @return array task locks.
+     */
+    public static function get_free_task_locks($trace, $attemptall = true, $heldlocks = array()) {
+        global $DB;
+
+        $lockkeys = self::get_all_task_lock_keys();
+        $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
+
+        foreach ($lockkeys as $lockkey) {
+            if (array_key_exists($lockkey, $heldlocks)) {
+                continue;
+            }
+
+            $tasklock = $cronlockfactory->get_lock($lockkey, 0);
+
+            if ($tasklock) {
+                $heldlocks[$lockkey] = $tasklock;
+                $trace->output("Acquired $lockkey lock");
+            } else {
+                $trace->output("Could not acquire $lockkey lock");
+                if (!$attemptall) {
+                    return $heldlocks;
                 }
             }
-            return false;
+
         }
 
-        return $locks;
+        return $heldlocks;
     }
 
-    /**
-     * return the locks for an array of tasks.
-     *
-     * @param  array  $tasks      array of task names.
-     * @param  boolean $tryall try and acquire all before returning.
-     *
-     * @return array of task locks, indexed by task classname
-     */
-    public static function get_task_locks($tasks, $tryall = false) {
-        $locks = array();
-        $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
-        foreach ($tasks as $taskname) {
-            $tasklock = $cronlockfactory->get_lock($taskname, 0);
-            if ($tasklock) {
-                $locks[$taskname] = $tasklock;
-            } else if (!$tryall) {
-                return $locks;
-            }
-        }
-        return $locks;
-    }
-
-    /**
-     * Given an array of tasks and an array of locks,
-     * determine which tasks do not have associated locks.
-     *
-     * @param  array $tasks tasknames
-     * @param  array $locks locks, indexed by taskname.
-     *
-     * @return array missing task names.
-     */
-    protected static function get_tasks_missing_locks($tasks, $locks) {
-        $missingtasks = array();
-        foreach ($tasks as $task) {
-            if (!array_key_exists($task, $locks)) {
-                $missingtasks[] = $task;
-            }
-        }
-        return $missingtasks;
-    }
-
-    /**
-     * mtraces a status of how many task locks are held
-     * and which are missing.
-     *
-     * @param  int $taskcount        number of tasks
-     * @param  array $missingtasklocks names of tasks missing locks
-     */
-    protected static function log_missing_locks($taskcount, $missingtasklocks) {
-        $totallocks = $taskcount - count($missingtasklocks);
-
-        $logstring = "Locked $totallocks/$taskcount tasks";
-
-        foreach ($missingtasklocks as $missinglock) {
-            $logstring .= ", missing $missinglock";
-        }
-
-        mtrace($logstring);
-    }
 }

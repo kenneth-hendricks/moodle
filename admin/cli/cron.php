@@ -48,6 +48,12 @@ if ($unrecognized) {
     cli_error(get_string('cliunknowoption', 'admin', $unrecognized));
 }
 
+if (empty($options['verbose'])) {
+    $trace = new null_progress_trace();
+} else {
+    $trace = new text_progress_trace();
+}
+
 if ($options['help']) {
     $help =
 "Execute periodic cron actions.
@@ -58,7 +64,7 @@ Options:
 --disable             Disable cron
 --disable-wait        Disable cron and wait until finished
 --is-running          Print cron status
---verbose             Print verbose task information for disable-wait
+--verbose             Print verbose task information for disable-wait and is-running
 
 Example:
 \$sudo -u www-data /usr/bin/php admin/cli/cron.php
@@ -75,11 +81,11 @@ Example:
     echo "Cron has been disabled for the site.\n";
     die;
 } else if ($options['disable-wait']) {
-    cron_disable_and_wait($options['verbose']);
+    cron_disable_and_wait($trace);
     echo "Cron is not currently running\n";
     die;
 } else if ($options['is-running']) {
-    if (cron_is_running()) {
+    if (cron_is_running($trace)) {
         echo "Cron is currently running.\n";
     } else {
         echo "Cron is not currently running\n";
