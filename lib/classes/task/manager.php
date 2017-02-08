@@ -411,6 +411,7 @@ class manager {
         global $DB;
 
         if (cron_is_disabled()) {
+            mtrace('Cron has been disabled - exiting early');
             return null;
         }
 
@@ -428,6 +429,7 @@ class manager {
 
             if (cron_is_disabled()) {
                 $cronlock->release();
+                mtrace('Cron has been disabled - exiting early');
                 return null;
             }
 
