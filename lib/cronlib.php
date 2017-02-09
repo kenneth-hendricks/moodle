@@ -185,9 +185,13 @@ function cron_is_disabled() {
 }
 
 /**
- * Whether cron is running. Tries to acquire the cron lock
- * and all task cron locks. Will fail when a lock cannot be acquired.
- * Does not wait for a lock to free.
+ * Determines if cron is actively running anywhere.
+ *
+ * Tries to acquire the cron lock and all task locks. Will fail if any lock
+ * cannot be acquired. It does not wait for any locks to free so it exits fast.
+ *
+ * This will also return false even if cron isn't running anywhere but a task
+ * is being manually run using admin/tool/task/cli/schedule_task.php.
  *
  * @param  process_trace $trace process trace
  * @return boolean whether cron is running.
@@ -215,8 +219,7 @@ function cron_is_running(progress_trace $trace) {
 }
 
 /**
- * Disables cron and wait until all
- * cron related locks are acquired.
+ * Disables cron and waits until all related locks are acquired.
  *
  * @param  process_trace $trace process trace
  */

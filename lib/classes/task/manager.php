@@ -712,7 +712,7 @@ class manager {
      *
      * @param  process_trace $trace process trace
      * @param  boolean $waitforlocks wait until all locks are held
-     * @param  integer $waitduration how long to wait between attempts
+     * @param  integer $waitduration how long to wait between attempts in seconds
      *
      * @return array all task locks - empty if they could not be acquired.
      */
@@ -724,7 +724,7 @@ class manager {
         $heldlocks = array();
         $heldlocks = self::get_free_task_locks($trace, $waitforlocks, $lockkeys, $heldlocks);
 
-        // If we can't get all locks and wont wait we release them now.
+        // If we can't get all locks and won't wait we release them now.
         if (!$waitforlocks && $lockcount !== count($heldlocks)) {
             foreach ($heldlocks as $lock) {
                 $lock->release();
@@ -741,7 +741,7 @@ class manager {
     }
 
     /**
-     * Acquires all free task locks.
+     * Attempts to acquire all free task locks.
      *
      * @param  process_trace $trace process trace
      * @param  boolean $attemptall try all locks or return on failure.
