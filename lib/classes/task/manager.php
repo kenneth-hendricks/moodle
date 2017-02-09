@@ -722,7 +722,7 @@ class manager {
         $lockcount = count($lockkeys);
 
         $heldlocks = array();
-        $heldlocks = self::get_free_task_locks($trace, $waitforlocks, $heldlocks);
+        $heldlocks = self::get_free_task_locks($trace, $waitforlocks, $lockkeys, $heldlocks);
 
         // If we can't get all locks and wont wait we release them now.
         if (!$waitforlocks && $lockcount !== count($heldlocks)) {
@@ -734,7 +734,7 @@ class manager {
 
         while ($lockcount !== count($heldlocks)) {
             sleep($waitduration);
-            $heldlocks = self::get_free_task_locks($trace, $waitforlocks, $heldlocks);
+            $heldlocks = self::get_free_task_locks($trace, $waitforlocks, $lockkeys, $heldlocks);
         }
 
         return $heldlocks;
@@ -749,12 +749,9 @@ class manager {
      *
      * @return array task locks.
      */
-    public static function get_free_task_locks($trace, $attemptall = true, $heldlocks = array()) {
+    public static function get_free_task_locks($trace, $attemptall = true, $lockkeys, $heldlocks = array()) {
         global $DB;
-
-        $lockkeys = self::get_all_task_lock_keys();
         $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
-
         foreach ($lockkeys as $lockkey) {
             if (array_key_exists($lockkey, $heldlocks)) {
                 continue;
@@ -771,7 +768,6 @@ class manager {
                     return $heldlocks;
                 }
             }
-
         }
 
         return $heldlocks;

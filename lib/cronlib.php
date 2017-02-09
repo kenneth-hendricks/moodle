@@ -252,7 +252,6 @@ function get_cron_lock(progress_trace $trace, $waitforlock = false) {
 
     while (!$cronlock) {
         $trace->output("Waiting for cron lock");
-        sleep($wait);
         $cronlockfactory->get_lock('core_cron', 10);
     }
 
