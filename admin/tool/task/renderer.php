@@ -145,17 +145,18 @@ class tool_task_renderer extends plugin_renderer_base {
         $output = '';
 
         if ($crondisabled) {
-            $output .= 'Cron disabled';
+            $label = get_string('cronisdisabled', 'admin');
             $pixicon = 't/show';
+            $action = new confirm_action(get_string('cronconfirmenable', 'admin'));
         } else {
-            $output .= 'Cron enabled';
+            $label = get_string('cronisenabled', 'admin');
             $pixicon = 't/hide';
+            $action = new confirm_action(get_string('cronconfirmdisable', 'admin'));
         }
 
         $toggleurl = new moodle_url('/admin/tool/task/scheduledtasks.php', array('action' => 'togglecron'));
-        $toggleaction = new confirm_action('CONFIRM YOU WANT THIS');
 
-        $output .= $OUTPUT->action_icon($toggleurl, new pix_icon($pixicon, 'hello'), $toggleaction);
+        $output .= $OUTPUT->action_link($toggleurl, $label, $action, null, new pix_icon($pixicon, ''));
 
         return $output;
     }
