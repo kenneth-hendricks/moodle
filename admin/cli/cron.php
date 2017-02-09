@@ -81,25 +81,37 @@ Example:
 
     echo $help;
     die;
+
 } else if ($options['enable']) {
     cron_enable();
     echo "Cron had been enabled for the site.\n";
     die;
+
 } else if ($options['disable']) {
     cron_disable();
     echo "Cron has been disabled for the site.\n";
     die;
+
 } else if ($options['disable-wait']) {
     cron_disable_and_wait($trace);
     echo "Cron is not currently running.\n";
     die;
+
 } else if ($options['is-running']) {
+
+    if (cron_is_disabled()) {
+        echo "Cron is disabled.\n";
+    } else {
+        echo "Cron is enabled.\n";
+    }
+
     if (cron_is_running($trace)) {
         echo "Cron is currently running.\n";
     } else {
         echo "Cron is not currently running.\n";
     }
     die;
+
 }
 
 cron_run();
