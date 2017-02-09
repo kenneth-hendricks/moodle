@@ -146,11 +146,11 @@ class tool_task_renderer extends plugin_renderer_base {
 
         if ($crondisabled) {
             $label = get_string('cronisdisabled', 'admin');
-            $pixicon = 't/show';
+            $pixicon = 'i/invalid';
             $action = new confirm_action(get_string('cronconfirmenable', 'admin'));
         } else {
             $label = get_string('cronisenabled', 'admin');
-            $pixicon = 't/hide';
+            $pixicon = 'i/valid';
             $action = new confirm_action(get_string('cronconfirmdisable', 'admin'));
         }
 
