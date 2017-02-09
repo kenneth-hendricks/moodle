@@ -695,8 +695,8 @@ class manager {
      */
     public static function get_all_task_lock_keys() {
         global $DB;
-        $scheduledtaskkeys = $DB->get_fieldset_select('task_scheduled', 'classname', '');
-        $adhoctaskkeys = $DB->get_fieldset_select('task_adhoc', 'id', '');
+        $scheduledtaskkeys = $DB->get_fieldset_sql('SELECT classname FROM {task_scheduled} ORDER BY classname');
+        $adhoctaskkeys = $DB->get_fieldset_sql('SELECT id FROM {task_adhoc} ORDER BY id');
 
         foreach ($adhoctaskkeys as $key => $value) {
             $adhoctaskkeys[$key] = 'adhoc_' . $value;
