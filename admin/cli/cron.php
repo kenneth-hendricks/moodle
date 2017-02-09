@@ -35,13 +35,21 @@ require_once($CFG->libdir.'/clilib.php');      // cli only functions
 require_once($CFG->libdir.'/cronlib.php');
 
 // now get cli options
-list($options, $unrecognized) = cli_get_params(array('help' => false,
-                                                     'enable' => false,
-                                                     'disable' => false,
-                                                     'disable-wait' => false,
-                                                     'is-running' => false,
-                                                     'verbose' => false),
-                                               array('h' => 'help'));
+list($options, $unrecognized) = cli_get_params(array(
+    'help' => false,
+    'enable' => false,
+    'disable' => false,
+    'disable-wait' => false,
+    'is-running' => false,
+    'verbose' => false,
+), array(
+    'h' => 'help',
+    'e' => 'enable',
+    'd' => 'disable',
+    'w' => 'disable-wait',
+    'i' => 'is-running',
+    'v' => 'verbose',
+));
 
 if ($unrecognized) {
     $unrecognized = implode("\n  ", $unrecognized);
@@ -59,12 +67,13 @@ if ($options['help']) {
 "Execute periodic cron actions.
 
 Options:
--h, --help            Print out this help
---enable              Enable cron
---disable             Disable cron
---disable-wait        Disable cron and wait until finished
---is-running          Print cron status
---verbose             Print verbose task information for disable-wait and is-running
+                      If no options then run cron (default)
+ -h, --help           Print out this help
+ -e, --enable         Enable cron
+ -d, --disable        Disable cron
+ -w, --disable-wait   Disable cron and wait until finished
+ -i, --is-running     Print cron status
+ -v, --verbose        Print verbose task information for disable-wait and is-running
 
 Example:
 \$sudo -u www-data /usr/bin/php admin/cli/cron.php
