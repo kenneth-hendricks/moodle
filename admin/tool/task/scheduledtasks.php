@@ -25,6 +25,7 @@
 require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir.'/adminlib.php');
 require_once($CFG->libdir.'/tablelib.php');
+require_once($CFG->libdir.'/cronlib.php');
 
 $PAGE->set_url('/admin/tool/task/scheduledtasks.php');
 $PAGE->set_context(context_system::instance());
@@ -41,6 +42,7 @@ $renderer = $PAGE->get_renderer('tool_task');
 
 $action = optional_param('action', '', PARAM_ALPHAEXT);
 $taskname = optional_param('task', '', PARAM_RAW);
+$crondisabled = cron_is_disabled();
 $task = null;
 $mform = null;
 
@@ -53,6 +55,15 @@ if ($taskname) {
 
 if ($action == 'edit') {
     $PAGE->navbar->add(get_string('edittaskschedule', 'tool_task', $task->get_name()));
+}
+
+if ($action == 'togglecron') {
+    if ($crondisabled) {
+        cron_enable();
+    } else {
+        cron_disable();
+    }
+    redirect(new moodle_url('/admin/tool/task/scheduledtasks.php'));
 }
 
 if ($task) {
@@ -100,6 +111,7 @@ if ($mform && ($mform->is_cancelled() || !empty($CFG->preventscheduledtaskchange
 
 } else {
     echo $OUTPUT->header();
+    echo $renderer->cron_toggle($crondisabled);
     $tasks = core\task\manager::get_all_scheduled_tasks();
     echo $renderer->scheduled_tasks_table($tasks);
     echo $OUTPUT->footer();
