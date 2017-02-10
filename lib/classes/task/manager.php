@@ -751,7 +751,7 @@ class manager {
      *
      * @return array task locks.
      */
-    public static function get_free_task_locks($trace, $attemptall = true, $lockkeys, $heldlocks = array()) {
+    protected static function get_free_task_locks($trace, $attemptall = true, $lockkeys, $heldlocks = array()) {
         global $DB;
         $cronlockfactory = \core\lock\lock_config::get_lock_factory('cron');
         foreach ($lockkeys as $lockkey) {
