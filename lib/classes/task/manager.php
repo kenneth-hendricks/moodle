@@ -24,6 +24,8 @@
  */
 namespace core\task;
 
+require_once($CFG->libdir.'/cronlib.php');
+
 define('CORE_TASK_TASKS_FILENAME', 'db/tasks.php');
 /**
  * Collection of task related methods.
