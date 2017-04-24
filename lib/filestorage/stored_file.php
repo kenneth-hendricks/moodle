@@ -258,7 +258,8 @@ class stored_file {
         }
 
         $filerecord = new stdClass;
-        if ($this->filesystem->is_file_readable_remotely_by_storedfile($newfile)) {
+        if ($this->filesystem->is_file_readable_remotely_by_storedfile($newfile) ||
+                $this->filesystem->is_file_readable_locally_by_storedfile($newfile)) {
             $contenthash = $newfile->get_contenthash();
             $filerecord->contenthash = $contenthash;
         } else {
